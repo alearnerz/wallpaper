@@ -1,0 +1,7 @@
+{
+  "spotSize": 0.15,
+  "blendStrength": 0.95,
+  "edgeSoftness": 0.3,
+  "foregroundImage": "assets/base.png",
+  "backgroundImage": "assets/xray.png"
+}
