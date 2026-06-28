@@ -3,6 +3,7 @@ import sys
 import json
 import platform
 import webbrowser
+import urllib.parse
 from pathlib import Path
 
 
@@ -14,13 +15,45 @@ def get_resource_path(relative_path: str = "") -> str:
     return os.path.join(base_path, relative_path)
 
 
-def get_config_path() -> str:
+def get_app_dir() -> str:
     if getattr(sys, '_MEIPASS', None):
-        exe_dir = os.path.dirname(sys.executable)
-        config_path = os.path.join(exe_dir, 'config.json')
-        if os.path.exists(config_path):
-            return config_path
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def get_config_path() -> str:
+    app_dir = get_app_dir()
+    config_path = os.path.join(app_dir, 'config.json')
+    if os.path.exists(config_path):
+        return config_path
     return get_resource_path('config.json')
+
+
+def resolve_image_path(image_path: str) -> str:
+    if os.path.isabs(image_path):
+        return image_path
+    app_dir = get_app_dir()
+    candidate = os.path.join(app_dir, image_path)
+    if os.path.exists(candidate):
+        return candidate
+    return get_resource_path(image_path)
+
+
+def detect_image_format(base_path_no_ext: str) -> str:
+    for ext in ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif']:
+        candidate = base_path_no_ext + ext
+        if os.path.exists(candidate):
+            return candidate
+    return base_path_no_ext + '.png'
+
+
+def path_to_file_url(path: str) -> str:
+    abs_path = os.path.abspath(path)
+    path_normalized = abs_path.replace('\\', '/')
+    if path_normalized.startswith('/'):
+        return 'file://' + urllib.parse.quote(path_normalized, safe='/:')
+    else:
+        return 'file:///' + urllib.parse.quote(path_normalized, safe='/:')
 
 
 def load_config() -> dict:
@@ -39,18 +72,40 @@ def load_config() -> dict:
                 default_config.update(loaded)
     except Exception:
         pass
+
+    fg_path = resolve_image_path(default_config["foregroundImage"])
+    bg_path = resolve_image_path(default_config["backgroundImage"])
+
+    fg_base = os.path.splitext(fg_path)[0]
+    bg_base = os.path.splitext(bg_path)[0]
+
+    fg_path = detect_image_format(fg_base)
+    bg_path = detect_image_format(bg_base)
+
+    default_config["foregroundImage"] = path_to_file_url(fg_path)
+    default_config["backgroundImage"] = path_to_file_url(bg_path)
+
     return default_config
 
 
 def save_config(config_json: str) -> bool:
     try:
-        if getattr(sys, '_MEIPASS', None):
-            exe_dir = os.path.dirname(sys.executable)
-            config_path = os.path.join(exe_dir, 'config.json')
-        else:
-            config_path = get_resource_path('config.json')
-        with open(config_path, 'w', encoding='utf-8') as f:
-            f.write(config_json)
+        app_dir = get_app_dir()
+        config_path = os.path.join(app_dir, 'config.json')
+        try:
+            config = json.loads(config_json)
+            save_config_data = {
+                "spotSize": config.get("spotSize", 0.15),
+                "blendStrength": config.get("blendStrength", 0.95),
+                "edgeSoftness": config.get("edgeSoftness", 0.3),
+                "foregroundImage": "assets/base.png",
+                "backgroundImage": "assets/xray.png"
+            }
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(save_config_data, f, indent=2, ensure_ascii=False)
+        except Exception:
+            with open(config_path, 'w', encoding='utf-8') as f:
+                f.write(config_json)
         return True
     except Exception:
         return False
@@ -59,6 +114,10 @@ def save_config(config_json: str) -> bool:
 class WallpaperAPI:
     def save_config(self, config_json: str) -> bool:
         return save_config(config_json)
+
+    def get_config(self) -> str:
+        config = load_config()
+        return json.dumps(config, ensure_ascii=False)
 
 
 def find_workerw_window():
@@ -122,8 +181,8 @@ def main():
     config = load_config()
     api = WallpaperAPI()
 
-    index_path = os.path.abspath(get_resource_path('index.html'))
-    index_url = 'file://' + index_path.replace('\\', '/')
+    index_path = get_resource_path('index.html')
+    index_url = path_to_file_url(index_path)
 
     try:
         import webview

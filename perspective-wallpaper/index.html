@@ -285,6 +285,22 @@
   const hintBadge = document.getElementById('hint-badge');
 
   function loadConfig() {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.get_config) {
+      return window.pywebview.api.get_config()
+        .then(jsonStr => {
+          try {
+            const data = JSON.parse(jsonStr);
+            if (data) Object.assign(config, data);
+          } catch (e) {}
+        })
+        .catch(() => {
+          return fetchConfigJson();
+        });
+    }
+    return fetchConfigJson();
+  }
+
+  function fetchConfigJson() {
     return fetch('config.json', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
@@ -306,9 +322,46 @@
         imagesLoaded++;
         resolve(img);
       };
-      img.onerror = () => reject(new Error('图片加载失败: ' + src));
+      img.onerror = () => {
+        if (src.startsWith('file://') || src.startsWith('data:')) {
+          reject(new Error('图片加载失败: ' + src));
+          return;
+        }
+        tryLoadAlternativeFormats(src).then(resolve).catch(() => {
+          reject(new Error('图片加载失败: ' + src));
+        });
+      };
       img.src = src + '?t=' + Date.now();
     });
+  }
+
+  function tryLoadAlternativeFormats(originalSrc) {
+    const basePath = originalSrc.replace(/\.[^.]+$/, '');
+    const extensions = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'];
+    const originalExt = originalSrc.match(/\.[^.]+$/);
+    const formats = extensions.filter(e => e !== (originalExt ? originalExt[0] : ''));
+    let index = 0;
+
+    function tryNext() {
+      return new Promise((resolve, reject) => {
+        if (index >= formats.length) {
+          reject(new Error('所有格式都尝试失败'));
+          return;
+        }
+        const newSrc = basePath + formats[index] + '?t=' + Date.now();
+        const img = new Image();
+        img.onload = () => {
+          imagesLoaded++;
+          resolve(img);
+        };
+        img.onerror = () => {
+          index++;
+          tryNext().then(resolve).catch(reject);
+        };
+        img.src = newSrc;
+      });
+    }
+    return tryNext();
   }
 
   function initWebGL() {
@@ -482,8 +535,15 @@
     document.getElementById('canvas-container').style.display = 'none';
     cssFallback.style.display = 'block';
 
-    cssFg.style.backgroundImage = 'url(' + config.foregroundImage + ')';
-    cssBg.style.backgroundImage = 'url(' + config.backgroundImage + ')';
+    const fgUrl = config.foregroundImage.startsWith('file://') || config.foregroundImage.startsWith('data:')
+      ? config.foregroundImage
+      : config.foregroundImage + '?t=' + Date.now();
+    const bgUrl = config.backgroundImage.startsWith('file://') || config.backgroundImage.startsWith('data:')
+      ? config.backgroundImage
+      : config.backgroundImage + '?t=' + Date.now();
+
+    cssFg.style.backgroundImage = 'url("' + fgUrl + '")';
+    cssBg.style.backgroundImage = 'url("' + bgUrl + '")';
 
     updateCSSFallbackVars();
   }
@@ -633,9 +693,38 @@
 
     } catch (err) {
       console.error('初始化失败:', err);
+      const errMsg = err.message || '';
+      let detailInfo = '';
+      let fgFailed = false;
+      let bgFailed = false;
+
+      if (errMsg.includes('base') || errMsg.includes(config.foregroundImage)) {
+        fgFailed = true;
+      }
+      if (errMsg.includes('xray') || errMsg.includes(config.backgroundImage)) {
+        bgFailed = true;
+      }
+
+      if (fgFailed || bgFailed) {
+        detailInfo = '<div style="margin-top:12px; text-align:left; font-size:12px; color:#ff9999;">';
+        if (fgFailed) {
+          detailInfo += '✗ 前景图加载失败<br>';
+          detailInfo += '&nbsp;&nbsp;尝试路径: ' + config.foregroundImage + '<br>';
+        }
+        if (bgFailed) {
+          detailInfo += '✗ 背景图加载失败<br>';
+          detailInfo += '&nbsp;&nbsp;尝试路径: ' + config.backgroundImage + '<br>';
+        }
+        detailInfo += '</div>';
+      }
+
       showError(
         '图片加载失败',
-        '请确认 <strong>assets</strong> 文件夹中包含 <strong>base.png</strong>（前景图）和 <strong>xray.png</strong>（背景图）。<br><br>支持 PNG / JPG 格式。'
+        '请确认 <strong>assets</strong> 文件夹位于程序同目录下，' +
+        '并包含 <strong>base.png</strong>（前景图/表图）和 <strong>xray.png</strong>（背景图/底图）。<br><br>' +
+        '支持 PNG / JPG / JPEG / WEBP / BMP / GIF 格式。<br><br>' +
+        '<span style="font-size:12px; color:#888;">提示：图片文件名必须为 base 和 xray，后缀名可不同</span>' +
+        detailInfo
       );
     }
   }
