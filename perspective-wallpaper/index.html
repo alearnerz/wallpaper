@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>透视壁纸</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  #canvas-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  #css-fallback {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  #css-fallback .bg-layer,
+  #css-fallback .fg-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  #css-fallback .bg-layer {
+    z-index: 1;
+  }
+
+  #css-fallback .fg-layer {
+    z-index: 2;
+    -webkit-mask-image: radial-gradient(circle at var(--mx, 50%) var(--my, 50%),
+      transparent calc(var(--spot-size, 15%) - var(--softness, 5%)),
+      black calc(var(--spot-size, 15%) + var(--softness, 5%)));
+    mask-image: radial-gradient(circle at var(--mx, 50%) var(--my, 50%),
+      transparent calc(var(--spot-size, 15%) - var(--softness, 5%)),
+      black calc(var(--spot-size, 15%) + var(--softness, 5%)));
+  }
+
+  #error-panel {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(30, 30, 30, 0.95);
+    color: #fff;
+    padding: 30px 40px;
+    border-radius: 12px;
+    text-align: center;
+    z-index: 1000;
+    max-width: 500px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  }
+
+  #error-panel h2 {
+    color: #ff6b6b;
+    margin-bottom: 15px;
+    font-size: 20px;
+  }
+
+  #error-panel p {
+    color: #ccc;
+    line-height: 1.6;
+    font-size: 14px;
+  }
+
+  #control-panel {
+    display: none;
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 300px;
+    background: rgba(20, 20, 20, 0.92);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 20px;
+    color: #fff;
+    z-index: 100;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+
+  #control-panel.visible {
+    display: block;
+  }
+
+  #control-panel h3 {
+    font-size: 16px;
+    margin-bottom: 16px;
+    color: #fff;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  #control-panel h3::before {
+    content: '';
+    width: 4px;
+    height: 16px;
+    background: #4a9eff;
+    border-radius: 2px;
+  }
+
+  .control-group {
+    margin-bottom: 16px;
+  }
+
+  .control-group:last-child {
+    margin-bottom: 0;
+  }
+
+  .control-group label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    color: #aaa;
+    margin-bottom: 6px;
+  }
+
+  .control-group label span.value {
+    color: #4a9eff;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .control-group input[type="range"] {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255,255,255,0.1);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .control-group input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #4a9eff;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+
+  .control-group input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+  }
+
+  .control-group input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: #4a9eff;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+  }
+
+  .panel-hint {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    font-size: 12px;
+    color: #666;
+    text-align: center;
+  }
+
+  #hint-badge {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.6);
+    color: rgba(255,255,255,0.7);
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    z-index: 50;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+
+  #hint-badge.show {
+    opacity: 1;
+  }
+</style>
+</head>
+<body>
+
+<div id="canvas-container">
+  <canvas id="glcanvas"></canvas>
+</div>
+
+<div id="css-fallback">
+  <div class="bg-layer" id="css-bg"></div>
+  <div class="fg-layer" id="css-fg"></div>
+</div>
+
+<div id="error-panel">
+  <h2 id="error-title">加载失败</h2>
+  <p id="error-message"></p>
+</div>
+
+<div id="control-panel">
+  <h3>透视效果调节</h3>
+  <div class="control-group">
+    <label>透视区域大小 <span class="value" id="val-size">15%</span></label>
+    <input type="range" id="ctrl-size" min="0.05" max="0.8" step="0.01" value="0.15">
+  </div>
+  <div class="control-group">
+    <label>混合强度 <span class="value" id="val-blend">95%</span></label>
+    <input type="range" id="ctrl-blend" min="0" max="1" step="0.01" value="0.95">
+  </div>
+  <div class="control-group">
+    <label>边缘柔化程度 <span class="value" id="val-soft">30%</span></label>
+    <input type="range" id="ctrl-soft" min="0" max="1" step="0.01" value="0.3">
+  </div>
+  <div class="panel-hint">按 H 键隐藏/显示面板</div>
+</div>
+
+<div id="hint-badge">按 H 键显示控制面板</div>
+
+<script>
+(function() {
+  'use strict';
+
+  const config = {
+    spotSize: 0.15,
+    blendStrength: 0.95,
+    edgeSoftness: 0.3,
+    foregroundImage: 'assets/base.png',
+    backgroundImage: 'assets/xray.png'
+  };
+
+  const mouse = { x: -9999, y: -9999, visible: false };
+  let useWebGL = true;
+  let gl = null;
+  let program = null;
+  let textures = { foreground: null, background: null };
+  let uniforms = {};
+  let animationId = null;
+  let imagesLoaded = 0;
+  let totalImages = 2;
+
+  const canvas = document.getElementById('glcanvas');
+  const cssFallback = document.getElementById('css-fallback');
+  const cssFg = document.getElementById('css-fg');
+  const cssBg = document.getElementById('css-bg');
+  const errorPanel = document.getElementById('error-panel');
+  const errorTitle = document.getElementById('error-title');
+  const errorMessage = document.getElementById('error-message');
+  const controlPanel = document.getElementById('control-panel');
+  const hintBadge = document.getElementById('hint-badge');
+
+  function loadConfig() {
+    return fetch('config.json', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) Object.assign(config, data);
+      })
+      .catch(() => {});
+  }
+
+  function showError(title, msg) {
+    errorTitle.textContent = title;
+    errorMessage.innerHTML = msg;
+    errorPanel.style.display = 'block';
+  }
+
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        imagesLoaded++;
+        resolve(img);
+      };
+      img.onerror = () => reject(new Error('图片加载失败: ' + src));
+      img.src = src + '?t=' + Date.now();
+    });
+  }
+
+  function initWebGL() {
+    gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!gl) return false;
+
+    const vsSource = `
+      attribute vec2 a_position;
+      varying vec2 v_texCoord;
+      void main() {
+        v_texCoord = a_position * 0.5 + 0.5;
+        gl_Position = vec4(a_position, 0.0, 1.0);
+      }
+    `;
+
+    const fsSource = `
+      precision highp float;
+      varying vec2 v_texCoord;
+      uniform sampler2D u_foreground;
+      uniform sampler2D u_background;
+      uniform vec2 u_mouse;
+      uniform float u_spotSize;
+      uniform float u_blendStrength;
+      uniform float u_edgeSoftness;
+      uniform vec2 u_resolution;
+      uniform float u_mouseVisible;
+
+      float smoothstep_edge(float edge0, float edge1, float x) {
+        float t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
+        return t * t * (3.0 - 2.0 * t);
+      }
+
+      void main() {
+        vec4 fgColor = texture2D(u_foreground, v_texCoord);
+        vec4 bgColor = texture2D(u_background, v_texCoord);
+
+        if (u_mouseVisible < 0.5) {
+          gl_FragColor = fgColor;
+          return;
+        }
+
+        float aspectRatio = u_resolution.x / u_resolution.y;
+        vec2 adjustedCoord = v_texCoord;
+        adjustedCoord.x *= aspectRatio;
+        vec2 adjustedMouse = u_mouse;
+        adjustedMouse.x *= aspectRatio;
+
+        float dist = distance(adjustedCoord, adjustedMouse);
+
+        float softness = u_edgeSoftness * u_spotSize + 0.001;
+        float innerEdge = u_spotSize - softness;
+        float outerEdge = u_spotSize + softness;
+
+        float mask = 1.0 - smoothstep_edge(innerEdge, outerEdge, dist);
+
+        float blend = mask * u_blendStrength;
+
+        vec3 finalColor = mix(fgColor.rgb, bgColor.rgb, blend);
+        float finalAlpha = mix(fgColor.a, bgColor.a, blend);
+
+        gl_FragColor = vec4(finalColor, finalAlpha);
+      }
+    `;
+
+    function compileShader(type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error('着色器编译失败:', gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+      }
+      return shader;
+    }
+
+    const vs = compileShader(gl.VERTEX_SHADER, vsSource);
+    const fs = compileShader(gl.FRAGMENT_SHADER, fsSource);
+    if (!vs || !fs) return false;
+
+    program = gl.createProgram();
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      console.error('程序链接失败:', gl.getProgramInfoLog(program));
+      return false;
+    }
+
+    const positionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -1, -1, 1, -1, -1, 1,
+      -1, 1, 1, -1, 1, 1
+    ]), gl.STATIC_DRAW);
+
+    const positionLoc = gl.getAttribLocation(program, 'a_position');
+    gl.enableVertexAttribArray(positionLoc);
+    gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
+
+    uniforms = {
+      foreground: gl.getUniformLocation(program, 'u_foreground'),
+      background: gl.getUniformLocation(program, 'u_background'),
+      mouse: gl.getUniformLocation(program, 'u_mouse'),
+      spotSize: gl.getUniformLocation(program, 'u_spotSize'),
+      blendStrength: gl.getUniformLocation(program, 'u_blendStrength'),
+      edgeSoftness: gl.getUniformLocation(program, 'u_edgeSoftness'),
+      resolution: gl.getUniformLocation(program, 'u_resolution'),
+      mouseVisible: gl.getUniformLocation(program, 'u_mouseVisible')
+    };
+
+    return true;
+  }
+
+  function createTexture(img) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    return texture;
+  }
+
+  function resizeCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    if (gl) {
+      gl.viewport(0, 0, canvas.width, canvas.height);
+    }
+  }
+
+  function render() {
+    if (!useWebGL || !gl || !program || !textures.foreground || !textures.background) {
+      animationId = requestAnimationFrame(render);
+      return;
+    }
+
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    gl.useProgram(program);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, textures.foreground);
+    gl.uniform1i(uniforms.foreground, 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, textures.background);
+    gl.uniform1i(uniforms.background, 1);
+
+    gl.uniform2f(uniforms.mouse, mouse.x, 1.0 - mouse.y);
+    gl.uniform1f(uniforms.spotSize, config.spotSize);
+    gl.uniform1f(uniforms.blendStrength, config.blendStrength);
+    gl.uniform1f(uniforms.edgeSoftness, config.edgeSoftness);
+    gl.uniform2f(uniforms.resolution, canvas.width, canvas.height);
+    gl.uniform1f(uniforms.mouseVisible, mouse.visible ? 1.0 : 0.0);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    animationId = requestAnimationFrame(render);
+  }
+
+  function initCSSFallback() {
+    useWebGL = false;
+    document.getElementById('canvas-container').style.display = 'none';
+    cssFallback.style.display = 'block';
+
+    cssFg.style.backgroundImage = 'url(' + config.foregroundImage + ')';
+    cssBg.style.backgroundImage = 'url(' + config.backgroundImage + ')';
+
+    updateCSSFallbackVars();
+  }
+
+  function updateCSSFallbackVars() {
+    const spotPct = (config.spotSize * 100) + '%';
+    const softPct = (config.edgeSoftness * config.spotSize * 100) + '%';
+    cssFg.style.setProperty('--spot-size', spotPct);
+    cssFg.style.setProperty('--softness', softPct);
+    cssFg.style.setProperty('--mx', (mouse.x * 100) + '%');
+    cssFg.style.setProperty('--my', (mouse.y * 100) + '%');
+
+    const opacity = mouse.visible ? config.blendStrength : 0;
+    cssFg.style.opacity = mouse.visible ? 1 : 1;
+  }
+
+  function updateMousePosition(clientX, clientY) {
+    mouse.x = clientX / window.innerWidth;
+    mouse.y = clientY / window.innerHeight;
+    mouse.visible = true;
+
+    if (!useWebGL) {
+      updateCSSFallbackVars();
+    }
+  }
+
+  function hideMouse() {
+    mouse.visible = false;
+    if (!useWebGL) {
+      updateCSSFallbackVars();
+    }
+  }
+
+  function setupMouseTracking() {
+    document.addEventListener('mousemove', (e) => {
+      updateMousePosition(e.clientX, e.clientY);
+    });
+
+    document.addEventListener('mouseleave', () => {
+      hideMouse();
+    });
+
+    document.addEventListener('mouseenter', (e) => {
+      updateMousePosition(e.clientX, e.clientY);
+    });
+
+    document.addEventListener('touchmove', (e) => {
+      if (e.touches.length > 0) {
+        updateMousePosition(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    }, { passive: true });
+
+    document.addEventListener('touchend', () => {
+      hideMouse();
+    });
+  }
+
+  function setupControls() {
+    const sizeSlider = document.getElementById('ctrl-size');
+    const blendSlider = document.getElementById('ctrl-blend');
+    const softSlider = document.getElementById('ctrl-soft');
+    const valSize = document.getElementById('val-size');
+    const valBlend = document.getElementById('val-blend');
+    const valSoft = document.getElementById('val-soft');
+
+    function updateValues() {
+      valSize.textContent = Math.round(config.spotSize * 100) + '%';
+      valBlend.textContent = Math.round(config.blendStrength * 100) + '%';
+      valSoft.textContent = Math.round(config.edgeSoftness * 100) + '%';
+    }
+
+    sizeSlider.value = config.spotSize;
+    blendSlider.value = config.blendStrength;
+    softSlider.value = config.edgeSoftness;
+    updateValues();
+
+    sizeSlider.addEventListener('input', (e) => {
+      config.spotSize = parseFloat(e.target.value);
+      updateValues();
+      if (!useWebGL) updateCSSFallbackVars();
+      saveConfig();
+    });
+
+    blendSlider.addEventListener('input', (e) => {
+      config.blendStrength = parseFloat(e.target.value);
+      updateValues();
+      if (!useWebGL) updateCSSFallbackVars();
+      saveConfig();
+    });
+
+    softSlider.addEventListener('input', (e) => {
+      config.edgeSoftness = parseFloat(e.target.value);
+      updateValues();
+      if (!useWebGL) updateCSSFallbackVars();
+      saveConfig();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'h' || e.key === 'H') {
+        controlPanel.classList.toggle('visible');
+      }
+    });
+  }
+
+  function saveConfig() {
+    try {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.save_config) {
+        window.pywebview.api.save_config(JSON.stringify(config));
+      }
+    } catch (e) {}
+  }
+
+  function showHint() {
+    hintBadge.classList.add('show');
+    setTimeout(() => {
+      hintBadge.classList.remove('show');
+    }, 3000);
+  }
+
+  async function init() {
+    await loadConfig();
+
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    setupMouseTracking();
+    setupControls();
+
+    try {
+      const [fgImg, bgImg] = await Promise.all([
+        loadImage(config.foregroundImage),
+        loadImage(config.backgroundImage)
+      ]);
+
+      const webglOk = initWebGL();
+
+      if (webglOk) {
+        textures.foreground = createTexture(fgImg);
+        textures.background = createTexture(bgImg);
+        render();
+      } else {
+        console.warn('WebGL 不可用，使用 CSS 降级方案');
+        initCSSFallback();
+      }
+
+      showHint();
+
+    } catch (err) {
+      console.error('初始化失败:', err);
+      showError(
+        '图片加载失败',
+        '请确认 <strong>assets</strong> 文件夹中包含 <strong>base.png</strong>（前景图）和 <strong>xray.png</strong>（背景图）。<br><br>支持 PNG / JPG 格式。'
+      );
+    }
+  }
+
+  init();
+
+})();
+</script>
+
+</body>
+</html>
